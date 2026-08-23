@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>arch-chat</title>
+<style>
+  :root{
+    --bg:        #0a0710;
+    --panel:     rgba(20,15,32,0.6);
+    --border:    rgba(0,200,220,0.16);
+    --border2:   rgba(220,60,170,0.16);
+    --text:      #cfd3e6;
+    --text-dim:  #6b7089;
+    --cyan:      #29d3e8;
+    --magenta:   #e04fb0;
+    --accent2:   #34d67f;
+    --warn:      #e0ab53;
+    --err:       #e2586e;
+    --mono: "Terminus","DejaVu Sans Mono","Cascadia Mono","Consolas",monospace;
+    --radius: 9px;
+    --fs-base: 14px;
+    --fs-input: 14px;
+    --pad: 10px;
+  }
+  *{ box-sizing:border-box; -ms-user-select:none; user-select:none; }
+  html,body{
+    margin:0; padding:0; height:100%; width:100%;
+    background:var(--bg); color:var(--text);
+    font-family:var(--mono); font-size:var(--fs-base);
+    overflow:hidden;
+  }
+  body{
+    background:
+      radial-gradient(500px 350px at 6% 0%,   rgba(0,200,220,0.06), transparent 60%),
+      radial-gradient(500px 400px at 100% 100%, rgba(220,60,170,0.06), transparent 60%),
+      var(--bg);
+  }
+  #scan{
+    position:fixed; top:0; left:0; right:0; bottom:0;
+    pointer-events:none; z-index:5;
+    background:repeating-linear-gradient(
+      to bottom, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px,
+      rgba(0,0,0,0) 2px, rgba(0,0,0,0) 3px);
+  }
+  #app{
+    display:-ms-flexbox; display:flex;
+    -ms-flex-direction:column; flex-direction:column;
+    height:100%; width:100%; position:relative;
+    padding:var(--pad); gap:7px;
+    padding-top:max(10px, env(safe-area-inset-top));
+    padding-bottom:max(10px, env(safe-area-inset-bottom));
+  }
+
+  .glass{
+    background:var(--panel);
+    -webkit-backdrop-filter:blur(9px) saturate(130%);
+    backdrop-filter:blur(9px) saturate(130%);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+  }
+
+  #titlebar{
+    -ms-flex:0 0 auto; flex:0 0 auto;
+    padding:7px 12px;
+    display:-ms-flexbox; display:flex;
+    -ms-flex-pack:justify; justify-content:space-between;
+    -ms-flex-align:center; align-items:center;
+    font-size:11.5px; color:var(--text-dim);
+  }
+  #titlebar .app-id b{ color:var(--cyan); font-weight:700; }
+  #titlebar .clock{ font-variant-numeric:tabular-nums; color:var(--text-dim); }
+
+  #log{
+    -ms-flex:1 1 auto; flex:1 1 auto;
+    overflow-y:auto; -webkit-overflow-scrolling:touch;
+    padding:12px 14px;
+  }
+
+  /* fastfetch-style banner */
+  .banner{
+    margin-bottom:14px; padding-bottom:12px;
+    border-bottom:1px solid var(--border);
+  }
+  .binfo{ font-size:12px; max-width:340px; }
+  .brow{ margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .brow .e{ display:inline-block; width:20px; text-align:center; }
+  .brow .k{ color:var(--text-dim); display:inline-block; min-width:76px; }
+  .brow .v{ color:var(--text); }
+  .btitle{ color:var(--cyan); font-weight:700; margin-bottom:3px; font-size:13.5px; }
+  .bsep{ color:var(--text-dim); margin-bottom:6px; font-size:11px; }
+  .bswatch{ margin-top:8px; }
+  .bswatch span{ display:inline-block; width:13px; height:13px; margin-right:3px; border-radius:2px; vertical-align:middle; }
+
+  .line{ margin-bottom:14px; -ms-user-select:text; user-select:text; }
+  .promptline{ color:var(--text-dim); font-size:12.5px; margin-bottom:2px; }
+  .promptline .u{ color:var(--accent2); }
+  .promptline .h{ color:var(--cyan); }
+  .promptline .p{ color:var(--text-dim); }
+  .body{ white-space:pre-wrap; word-wrap:break-word; margin-top:2px; line-height:1.5; font-size:var(--fs-base); }
+  .line.me .body{ color:var(--text); }
+  .line.ai .body{ color:#b7bcd8; }
+  .line.sys .body{ color:var(--warn); }
+  .line.err .body{ color:var(--err); }
+
+  #inputbar{
+    -ms-flex:0 0 auto; flex:0 0 auto;
+    padding:9px 12px;
+    display:-ms-flexbox; display:flex;
+    -ms-flex-align:center; align-items:center;
+    border-color:var(--border2);
+  }
+  #inputbar .u{ color:var(--accent2); }
+  #inputbar .h{ color:var(--cyan); }
+  #inputbar .p{ color:var(--text-dim); padding-right:7px; -ms-flex:0 0 auto; flex:0 0 auto; white-space:nowrap; font-size:12.5px; }
+  #inputfield{
+    -ms-flex:1 1 auto; flex:1 1 auto;
+    background:transparent; border:none; outline:none;
+    color:var(--text); font-family:var(--mono); font-size:var(--fs-input);
+    caret-color:var(--magenta);
+    -ms-user-select:text; user-select:text;
+    padding:3px 0; min-width:0;
+  }
+  #cursor{
+    -ms-flex:0 0 auto; flex:0 0 auto;
+    width:8px; height:16px; background:var(--magenta);
+    box-shadow:0 0 8px rgba(224,79,176,0.7);
+    margin-left:3px; border-radius:1px;
+    animation:blink 1s steps(1) infinite;
+  }
+  #inputfield:focus ~ #cursor{ display:none; }
+  @keyframes blink{ 0%,49%{opacity:1;} 50%,100%{opacity:0;} }
+
+  #sendbtn{
+    -ms-flex:0 0 auto; flex:0 0 auto;
+    background:rgba(41,211,232,0.1);
+    color:var(--text); border:1px solid var(--border);
+    font-family:var(--mono); font-weight:700; font-size:11.5px; letter-spacing:.5px;
+    padding:8px 12px; margin-left:8px; border-radius:7px;
+  }
+  #sendbtn:active{ background:rgba(41,211,232,0.22); }
+
+  #statusbar{
+    -ms-flex:0 0 auto; flex:0 0 auto;
+    padding:6px 12px;
+    display:-ms-flexbox; display:flex;
+    -ms-flex-pack:justify; justify-content:space-between;
+    font-size:10.5px; color:var(--text-dim);
+  }
+  #tags{ display:-ms-flexbox; display:flex; }
+  .tag{ padding:2px 7px; margin-right:4px; border:1px solid var(--border); border-radius:5px; }
+  .tag.active{
+    color:#04121a; background:var(--cyan); border-color:var(--cyan);
+  }
+  #modelname{ color:var(--text-dim); }
+  #netstate.off{ color:var(--err); }
+
+  ::-webkit-scrollbar{ width:5px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border); border-radius:4px; }
+
+  /* --- responsive scaling --- */
+  @media (min-width:600px){
+    :root{ --fs-base:15px; --fs-input:15px; --pad:14px; --radius:11px; }
+    .binfo{ font-size:13px; }
+  }
+  @media (min-width:900px){
+    :root{ --fs-base:16px; --fs-input:16px; --pad:18px; }
+    #app{ max-width:720px; margin:0 auto; }
+    .binfo{ font-size:14px; }
+  }
+  @media (max-width:340px){
+    :root{ --fs-base:12.5px; --fs-input:13px; --pad:7px; }
+    #sendbtn{ padding:7px 9px; font-size:10.5px; }
+  }
+  @media (max-height:420px){
+    .banner{ display:none; }
+    #titlebar{ padding:4px 10px; }
+  }
+  @media (orientation:landscape) and (max-height:400px){
+    #app{ padding-top:6px; padding-bottom:6px; }
+  }
+</style>
+</head>
+<body>
+<div id="scan"></div>
+<div id="app">
+
+  <div id="titlebar" class="glass">
+    <span class="app-id"><b>❯_</b> arch-chat — sway</span>
+    <span class="clock" id="clock">--:--</span>
+  </div>
+
+  <div id="log" class="glass"></div>
+
+  <div id="inputbar" class="glass">
+    <span class="p"><span class="u">user</span><span class="h">@device</span> ~ %</span>
+    <input id="inputfield" type="text" autocomplete="off" autocapitalize="sentences" />
+    <span id="cursor"></span>
+    <button id="sendbtn">SEND</button>
+  </div>
+
+  <div id="statusbar" class="glass">
+    <div id="tags">
+      <span class="tag active">1:chat</span>
+      <span class="tag">2:log</span>
+    </div>
+    <div><span id="modelname">openai</span> · <span id="netstate">online</span></div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var log     = document.getElementById("log");
+  var input   = document.getElementById("inputfield");
+  var sendBtn = document.getElementById("sendbtn");
+  var clockEl = document.getElementById("clock");
+  var netEl   = document.getElementById("netstate");
+
+  var history = [];
+  var busy = false;
+  var bootTime = new Date().getTime();
+
+  function pad(n){ return n < 10 ? "0"+n : ""+n; }
+  function tickClock(){
+    var d = new Date();
+    clockEl.textContent = pad(d.getHours()) + ":" + pad(d.getMinutes());
+  }
+  tickClock();
+  setInterval(tickClock, 15000);
+
+  /* ---------- real device fingerprint, fastfetch-style ---------- */
+  function detectOS(ua){
+    if (/Windows Phone|Windows Mobile|IEMobile/i.test(ua)) return "Windows 10 Mobile";
+    if (/Android/i.test(ua)) return "Android";
+    if (/iPhone|iPad|iPod/i.test(ua)) return "iOS";
+    if (/Windows NT/i.test(ua)) return "Windows";
+    if (/Mac OS X/i.test(ua)) return "macOS";
+    if (/Linux/i.test(ua)) return "Linux";
+    return "неизвестно";
+  }
+  function detectBrowser(ua){
+    if (/Edge\//i.test(ua)) return "EdgeHTML";
+    if (/EdgA\//i.test(ua)) return "Edge (Android)";
+    if (/Edg\//i.test(ua)) return "Edge (Chromium)";
+    if (/OPR\//i.test(ua)) return "Opera";
+    if (/YaBrowser/i.test(ua)) return "Yandex";
+    if (/Firefox\//i.test(ua)) return "Firefox";
+    if (/Chrome\//i.test(ua)) return "Chrome";
+    if (/Safari\//i.test(ua)) return "Safari";
+    return "неизвестно";
+  }
+  function deviceLabelFallback(os){
+    if (os === "Windows 10 Mobile") return "lumia";
+    if (os === "Android") return "android";
+    if (os === "iOS") return "iphone";
+    if (os === "Windows") return "pc";
+    if (os === "macOS") return "mac";
+    return "device";
+  }
+  function parseAndroidModel(ua){
+    var m = ua.match(/Android [0-9.]+;\s*([^;)]+?)\s*Build\//);
+    return m ? m[1].replace(/^[A-Za-z]+-/,"").trim() : null;
+  }
+  function parseWinPhoneModel(ua){
+    var m = ua.match(/Windows Phone[^)]*;\s*([^;)]+)\)/);
+    if (m) {
+      var v = m[1].trim();
+      if (v && !/^(Android|Devices?|Microsoft)$/i.test(v)) return v;
+    }
+    return null;
+  }
+  function slugify(name){ return name.replace(/\s+/g,""); }
+
+  function updateHostDisplays(name){
+    var crowned = name + "👑";
+    var titleEl = document.getElementById("hosttitle");
+    if (titleEl) titleEl.textContent = "user@" + name + " 👑";
+    var promptH = document.querySelectorAll("#inputbar .h, .promptline .h");
+    for (var i=0;i<promptH.length;i++){ promptH[i].textContent = "@" + slugify(crowned); }
+  }
+  function fmtUptime(ms){
+    var s = Math.floor(ms/1000);
+    var m = Math.floor(s/60); s = s%60;
+    return pad(m)+":"+pad(s);
+  }
+
+  function buildBanner(){
+    var ua = navigator.userAgent || "";
+    var os = detectOS(ua);
+    var browser = detectBrowser(ua);
+    var fallbackLabel = deviceLabelFallback(os);
+    document.querySelector("#inputbar .h").textContent = "@" + slugify(fallbackLabel + "👑");
+
+    var dpr = window.devicePixelRatio || 1;
+    var w = screen.width || window.innerWidth;
+    var h = screen.height || window.innerHeight;
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var cores = navigator.hardwareConcurrency ? (navigator.hardwareConcurrency + " ядер") : "н/д";
+    var mem = navigator.deviceMemory ? (navigator.deviceMemory + " ГБ") : "н/д";
+    var lang = navigator.language || navigator.userLanguage || "н/д";
+    var platform = navigator.platform || "н/д";
+    var touch = ("ontouchstart" in window || navigator.maxTouchPoints > 0) ? "да" : "нет";
+    var conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    var connType = conn && conn.effectiveType ? conn.effectiveType : (navigator.onLine ? "online" : "offline");
+
+    var rows = "";
+    rows += "<div class='btitle' id='hosttitle'>user@" + fallbackLabel + " 👑</div>";
+    rows += "<div class='bsep'>-----------------</div>";
+    rows += "<div class='brow'><span class='e'>🖥️</span><span class='k'>ОС</span><span class='v'>" + os + "</span></div>";
+    rows += "<div class='brow'><span class='e'>🌐</span><span class='k'>Браузер</span><span class='v'>" + browser + "</span></div>";
+    rows += "<div class='brow'><span class='e'>📐</span><span class='k'>Экран</span><span class='v'>" + w + "x" + h + " @" + dpr + "x</span></div>";
+    rows += "<div class='brow'><span class='e'>🪟</span><span class='k'>Вьюпорт</span><span class='v'>" + vw + "x" + vh + "</span></div>";
+    rows += "<div class='brow'><span class='e'>⚙️</span><span class='k'>CPU</span><span class='v'>" + cores + "</span></div>";
+    rows += "<div class='brow'><span class='e'>🧠</span><span class='k'>Память</span><span class='v'>" + mem + "</span></div>";
+    rows += "<div class='brow'><span class='e'>👆</span><span class='k'>Тачскрин</span><span class='v'>" + touch + "</span></div>";
+    rows += "<div class='brow'><span class='e'>📶</span><span class='k'>Сеть</span><span class='v'>" + connType + "</span></div>";
+    rows += "<div class='brow'><span class='e'>🌍</span><span class='k'>Локаль</span><span class='v'>" + lang + "</span></div>";
+    rows += "<div class='brow'><span class='e'>🛠️</span><span class='k'>Платформа</span><span class='v'>" + platform + "</span></div>";
+    rows += "<div class='brow'><span class='e'>🔋</span><span class='k'>Батарея</span><span class='v' id='battrow'>н/д</span></div>";
+    rows += "<div class='brow'><span class='e'>⏱️</span><span class='k'>Аптайм</span><span class='v' id='uptimerow'>00:00</span></div>";
+    rows += "<div class='bswatch'>" +
+      "<span style='background:#e2586e'></span><span style='background:#e0ab53'></span>" +
+      "<span style='background:#34d67f'></span><span style='background:#29d3e8'></span>" +
+      "<span style='background:#7a7fd0'></span><span style='background:#e04fb0'></span>" +
+      "<span style='background:#cfd3e6'></span><span style='background:#6b7089'></span></div>";
+
+    var banner = document.createElement("div");
+    banner.className = "banner";
+    banner.innerHTML = "<div class='binfo'>" + rows + "</div>";
+    log.appendChild(banner);
+
+    /* try to resolve the *real* device model, best-effort, then swap it in */
+    try {
+      if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+        navigator.userAgentData.getHighEntropyValues(["model"]).then(function(d){
+          if (d && d.model) updateHostDisplays(d.model);
+        }).catch(function(){});
+      } else {
+        var model = parseAndroidModel(ua) || parseWinPhoneModel(ua);
+        if (model) updateHostDisplays(model);
+      }
+    } catch(e){}
+
+    setInterval(function(){
+      var el = document.getElementById("uptimerow");
+      if (el) el.textContent = fmtUptime(new Date().getTime() - bootTime);
+    }, 1000);
+
+    try {
+      if (navigator.getBattery) {
+        navigator.getBattery().then(function(b){
+          var el = document.getElementById("battrow");
+          if (!el) return;
+          function upd(){
+            el.textContent = Math.round(b.level*100) + "% " + (b.charging ? "(заряд)" : "");
+          }
+          upd();
+          b.addEventListener("levelchange", upd);
+          b.addEventListener("chargingchange", upd);
+        }).catch(function(){});
+      }
+    } catch(e){}
+  }
+  buildBanner();
+
+  function addLine(kind, text){
+    var wrap = document.createElement("div");
+    wrap.className = "line " + kind;
+
+    if (kind !== "sys" && kind !== "err") {
+      var head = document.createElement("div");
+      head.className = "promptline";
+      if (kind === "me") {
+        head.innerHTML = document.querySelector("#inputbar .p").innerHTML;
+      } else {
+        head.innerHTML = "<span class='h'>ai</span><span class='p'>&gt;&gt;</span>";
+      }
+      wrap.appendChild(head);
+    }
+
+    var body = document.createElement("div");
+    body.className = "body";
+    body.textContent = text;
+    wrap.appendChild(body);
+
+    log.appendChild(wrap);
+    log.scrollTop = log.scrollHeight;
+    return body;
+  }
+
+  addLine("sys", "сессия открыта. ключ не требуется. напиши что-нибудь и жми Enter.");
+
+  function setBusy(isBusy){
+    busy = isBusy;
+    sendBtn.textContent = isBusy ? "..." : "SEND";
+  }
+
+  function send(){
+    if (busy) return;
+    var text = input.value.replace(/^\s+|\s+$/g, "");
+    if (!text) return;
+    input.value = "";
+    addLine("me", text);
+    history.push({ role: "user", content: text });
+    setBusy(true);
+
+    var aiBody = addLine("ai", "...");
+
+    var payload = JSON.stringify({
+      model: "openai",
+      messages: history,
+      private: true
+    });
+
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", "https://text.pollinations.ai/openai", true);
+    xhr.setRequestHeader("Content-Type", "application/json");
+    xhr.timeout = 30000;
+
+    xhr.onreadystatechange = function(){
+      if (xhr.readyState !== 4) return;
+      setBusy(false);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        var reply = "";
+        try {
+          var data = JSON.parse(xhr.responseText);
+          reply = data.choices[0].message.content;
+        } catch (e) {
+          reply = xhr.responseText || "пустой ответ";
+        }
+        aiBody.textContent = reply;
+        history.push({ role: "assistant", content: reply });
+      } else {
+        aiBody.parentNode.className = "line err";
+        aiBody.textContent = "ошибка: сервер ответил " + xhr.status;
+      }
+      log.scrollTop = log.scrollHeight;
+    };
+
+    xhr.ontimeout = function(){
+      setBusy(false);
+      aiBody.parentNode.className = "line err";
+      aiBody.textContent = "таймаут — нет ответа за 30с";
+    };
+
+    xhr.onerror = function(){
+      setBusy(false);
+      aiBody.parentNode.className = "line err";
+      aiBody.textContent = "нет соединения с сетью";
+      netEl.textContent = "offline";
+      netEl.className = "off";
+    };
+
+    try {
+      xhr.send(payload);
+    } catch (e) {
+      setBusy(false);
+      aiBody.parentNode.className = "line err";
+      aiBody.textContent = "не удалось отправить запрос";
+    }
+  }
+
+  sendBtn.addEventListener("click", send);
+  input.addEventListener("keydown", function(e){
+    if (e.keyCode === 13) { send(); }
+  });
+
+  window.addEventListener("online",  function(){ netEl.textContent = "online"; netEl.className = ""; });
+  window.addEventListener("offline", function(){ netEl.textContent = "offline"; netEl.className = "off"; });
+
+  input.focus();
+})();
+</script>
+</body>
+</html>
